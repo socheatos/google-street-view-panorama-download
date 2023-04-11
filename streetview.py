@@ -22,6 +22,11 @@ import os
 import numpy as np
 from skimage import io
 
+def _read_API(path):
+    with open(path) as file:
+        key = file.read()
+    return key
+
 def _panoids_url(lat, lon):
     """
     Builds the URL of the script on Google's servers that returns the closest
@@ -127,7 +132,7 @@ def tiles_info(panoid, zoom=5):
     The format is (x, y, filename, fileurl)
     """
 #     image_url = 'http://maps.google.com/cbk?output=tile&panoid={}&zoom={}&x={}&y={}'
-    image_url = "http://cbk0.google.com/cbk?output=tile&panoid={}&zoom={}&x={}&y={}"
+    image_url = "https://cbk0.google.com/cbk?output=tile&panoid={}&zoom={}&x={}&y={}"
 
     # The tiles positions
     coord = list(itertools.product(range(26), range(13)))
