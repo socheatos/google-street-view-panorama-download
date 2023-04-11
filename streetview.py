@@ -45,7 +45,92 @@ def _panoids_data(lat, lon, proxies=None):
     return requests.get(url, proxies=None)
 
 
-def panoids(lat, lon, closest=False, disp=False, proxies=None):
+def panoids_byYear(lat, lon, query_month=None, query_year=None, disp=False, proxies=None):
+    resp = _panoids_data(lat, lon)
+    
+    pans = re.findall('\[[0-9]+,"(.+?)"\].+?\[\[null,null,(-?[0-9]+.[0-9]+),(-?[0-9]+.[0-9]+)', resp.text)
+    pans = [{
+        "panoid": p[0],
+        "lat": float(p[1]),
+        "lon": float(p[2])} for p in pans]  # Convert to floats
+
+    # Remove duplicate panoramas
+    pans = [p for i, p in enumerate(pans) if p not in pans[:i]]
+
+    
+
+    # Get all the dates
+    # The dates seem to be at the end of the file. They have a strange format but
+    # are in the same order as the panoids except that the latest date is last
+    # instead of first.
+    dates = re.findall('([0-9]?[0-9]?[0-9])?,?\[(20[0-9][0-9]),([0-9]+)\]', resp.text)
+    dates = [list(d)[1:] for d in dates]  # Convert to lists and drop the index
+    
+    if len(dates) > 0:
+        # Convert all values to integers
+        dates = [[int(v) for v in d] for d in dates]
+        # print(len(dates),len(pans))
+        
+        # Make sure the month value is between 1-12
+        dates = [d  for d in dates if (d[1] <= 12) and (d[1] >= 1) ]
+
+
+        # The last date belongs to the first panorama
+        year, month = dates.pop(-1)
+        pans[0].update({'year': year, "month": month})
+
+
+        # The dates then apply in reverse order to the bottom panoramas
+        dates.reverse()
+        for i, (year, month) in enumerate(dates):
+            pans[-1-i].update({'year': year, "month": month})
+        # print(len(dates),len(pans))
+            # print(pans[-1-i])
+        
+        pans = pans[-len(dates):]
+
+    # Sort the pans array
+    def func(x):
+        if 'year'in x:
+            return datetime(year=x['year'], month=x['month'], day=1)
+        else:
+            return datetime(year=1000, month=1, day=1)
+    pans.sort(key=func)
+
+    def find_indices(list_to_check, item_to_find):
+        return [idx for idx, value in enumerate(list_to_check) if value == item_to_find]
+        
+    if disp:
+        for pan in pans:
+            print(pan)
+
+
+    if query_year:
+        # if a query year is specified try to find that year
+        years = [i['year'] for i in pans]
+        try:
+            idx = find_indices(years, query_year)
+            if len(idx)>1:
+                pans = [pans[i] for i in idx]
+                idx = find_indices([i['month'] for i in pans], query_month)[0]
+                return pans[idx]
+            
+            return pans[idx[0]]
+        except:
+            return pans[-1]
+
+
+            
+        
+            
+        
+        # if not found just return the most recent
+        
+    return pans[-1]
+    
+
+
+def panoids(lat, lon, query_month=None, query_year=None, closest=False, disp=False, proxies=None):
     """
     Gets the closest panoramas (ids) to the GPS coordinates.
     If the 'closest' boolean parameter is set to true, only the closest panorama
@@ -65,7 +150,7 @@ def panoids(lat, lon, closest=False, disp=False, proxies=None):
     # 2012
     # 2013
     # 2014
-
+    
     pans = re.findall('\[[0-9]+,"(.+?)"\].+?\[\[null,null,(-?[0-9]+.[0-9]+),(-?[0-9]+.[0-9]+)', resp.text)
     pans = [{
         "panoid": p[0],
@@ -89,9 +174,9 @@ def panoids(lat, lon, closest=False, disp=False, proxies=None):
     if len(dates) > 0:
         # Convert all values to integers
         dates = [[int(v) for v in d] for d in dates]
-
+        print(dates)
         # Make sure the month value is between 1-12
-        dates = [d for d in dates if d[1] <= 12 and d[1] >= 1]
+        dates = [d  if (d[1] <= 12) and (d[1] >= 1) else [3000,12] for d in dates]
 
         # The last date belongs to the first panorama
         year, month = dates.pop(-1)
@@ -121,8 +206,7 @@ def panoids(lat, lon, closest=False, disp=False, proxies=None):
 
     if closest:
         return [pans[i] for i in range(len(dates))]
-    else:
-        return pans
+    return pans
 
 
 def tiles_info(panoid, zoom=5):
@@ -197,7 +281,7 @@ def stich_tiles(panoid, tiles, directory, final_directory):
     
 
 
-def download_panorama_v3(panoid, zoom=5, disp=False):
+def download_panorama_v3(panoid, zoom=3, disp=False):
     '''
     v3: save image information in a buffer. (v2: save image to dist then read)
     input:
@@ -209,8 +293,10 @@ def download_panorama_v3(panoid, zoom=5, disp=False):
     '''
     tile_width = 512
     tile_height = 512
+
     # img_w, img_h = int(np.ceil(416*(2**zoom)/tile_width)*tile_width), int(np.ceil(416*( 2**(zoom-1) )/tile_width)*tile_width)
     img_w, img_h = 416*(2**zoom), 416*( 2**(zoom-1) )
+    # img_w, img_h = int(13312/2), int(6656/2)
     tiles = tiles_info( panoid, zoom=zoom)
     valid_tiles = []
     # function of download_tiles
@@ -332,8 +418,8 @@ def delete_tiles(tiles, directory):
     for x, y, fname, url in tiles:
         os.remove(directory + "/" + fname)
 
-
-def api_download(panoid, heading, flat_dir, key, width=640, height=640,
+APIKEY = _read_API('apikey.txt')
+def api_download(panoid, heading, flat_dir, key=APIKEY, width=640, height=640,
                  fov=120, pitch=0, extension='jpg', year=2017, fname=None):
     """
     Download an image using the official API. These are not panoramas.
